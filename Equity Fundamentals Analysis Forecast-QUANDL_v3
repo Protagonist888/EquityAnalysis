@@ -1,0 +1,312 @@
+##Purpose of this is to explore SHARADAR/SF1 data tables
+##Dimensions  (As Reported)       (Most-Recent Reported)
+##Annual         ARY                      MRY  
+##Quarterly      ARQ                      MRQ
+##Trailing 12    ART                      MRT
+
+##module imports
+import quandl
+quandl.ApiConfig.api_key="4928xsPUQTH48hi-y8yR"
+
+import pandas as pd
+import numpy as np
+import time
+from datetime import date,timedelta,datetime
+
+import datetime
+
+##Define weekday number
+def WeekCalc(x): 
+    if x == 0:
+        return 3
+    elif x == 6:
+        return 2
+    else:
+        return 1
+
+##Time Variables
+yesterday = date.today()-timedelta(WeekCalc(date.today().weekday()))
+print(type(yesterday))
+two_years_ago = date.today()-timedelta(720)
+time_period = two_years_ago
+
+most_recent_quarter = '2019-12-31'
+##Future date ranges to calculate future price from a past earnings period
+format_str = '%Y-%m-%d'
+one_months_start = datetime.datetime.strptime('2019-1-1', format_str)
+one_months_end = datetime.datetime.strptime('2019-2-1', format_str)
+three_months_start = datetime.datetime.strptime('2019-3-1', format_str)
+three_months_end = datetime.datetime.strptime('2019-4-1', format_str)
+six_months_start = datetime.datetime.strptime('2019-6-1', format_str)
+six_months_end = datetime.datetime.strptime('2019-7-1', format_str)
+nine_months_start = datetime.datetime.strptime('2019-9-1', format_str)
+nine_months_end = datetime.datetime.strptime('2019-10-1', format_str)
+twelve_months_start = datetime.datetime.strptime('2019-12-1', format_str)
+twelve_months_end  = datetime.datetime.strptime('2020-1-1', format_str)
+
+
+##Format date above to datetime to match SEP datatable
+
+
+most_recent_quarter_date = datetime.datetime.strptime(most_recent_quarter, '%Y-%m-%d')
+print(most_recent_quarter_date)
+print(type(most_recent_quarter_date))
+
+most_recent_quarter_date_string = most_recent_quarter_date.strftime('%Y-%m-%d')
+print(most_recent_quarter_date_string)
+print(type(most_recent_quarter_date_string))
+
+#Intrinsic Value Calculation Assumptions
+Treasury_Rate = 3
+Multiple = 8.5
+Corporate_Yield = 5
+
+##---------------------------------------------------------------------------------------------------
+##Bring in ALL non-de-listed equities
+##In lines below, specifiy whether you want a sector or industry list
+
+MetaDataDF = quandl.get_table('SHARADAR/TICKERS', qopts={"columns": ['ticker','sector','industry','sicindustry',
+    'scalerevenue','name','isdelisted']}, paginate=True)
+
+MetaDataDF_Filtered = MetaDataDF[MetaDataDF['isdelisted']=='N']
+MetaDataDF_Filtered.head(20)
+##Find unique entries in dataframe
+MetaDataDF_Filtered.sector.unique()
+
+##Sector_Choices = ['Basic Materials','Consumer Cyclical','Financial Services', 'Healthcare',
+##'Industrials','Technology', 'Utilities', 'Real Estate', 'Consumer Defensive','None','Energy', 'Communication Services']
+MetaDataDF_Filtered_Sector = MetaDataDF_Filtered[MetaDataDF_Filtered['sector'] == 'Consumer Defensive']
+##Find unique industries in above table
+#MetaDataDF_Filtered_Sector.sicindustry.unique()
+MetaDataDF_Filtered_Sector_TickerList = list(MetaDataDF_Filtered_Sector['ticker'])
+#print(MetaDataDF_Filtered_Sector_TickerList)
+
+##Uncomment below to use industry specific filters
+#MetaDataDF_Filtered_Industry = MetaDataDF_Filtered[MetaDataDF_Filtered['industry'] == 'Grocery Stores']
+#MetaDataDF_Filtered_Industry_TickerList = list(MetaDataDF_Filtered_Industry['ticker'])
+#print(MetaDataDF_Filtered_Industry_TickerList)
+##-----------------------------------------------------------------------------------------------
+
+##Change this to MetaDataDF_Filtered_Sector_TickerList OR MetaDataDF_Filtered_Industry_TickerList
+x_var = MetaDataDF_Filtered_Sector_TickerList
+print(type(x_var))
+##QUANDL Table SF1 query pull
+Price_DataDF = quandl.get_table('SHARADAR/SF1', dimension='MRT', ticker = x_var, calendardate={'lte': most_recent_quarter_date_string},qopts={"columns": ['ticker', 'dimension', 'calendardate', 'datekey', 'reportperiod', 
+    'lastupdated', 'FCFPS', 'ROIC', 'grossmargin', 'shareswadil', 'debt', 'debtc', 'epsusd', 'intexp', 'pe1','ebitdausd']}, paginate=True)
+
+DF = pd.DataFrame(Price_DataDF, columns = list(Price_DataDF)).sort_values( by= ['ticker','reportperiod'], ascending=True)
+
+##create pct change arrays
+DF['ROIC_delta'] = DF['roic'].pct_change()
+DF['FCFPS_delta'] = DF['fcfps'].pct_change()
+DF['EBITDA_delta'] = DF['ebitdausd'].pct_change()
+DF['GROSSMARG_delta'] = DF['grossmargin'].pct_change()
+DF['SHARESOUT_delta'] = DF['shareswadil'].pct_change()
+    
+    
+##Shift all pct change arrays once and twice
+DF['ROIC_delta_shift1'] = DF['ROIC_delta'].shift(1)
+DF['ROIC_delta_shift2'] = DF['ROIC_delta'].shift(2)
+
+DF['FCFPS_delta_shift1'] = DF['FCFPS_delta'].shift(1)
+DF['FCFPS_delta_shift2'] = DF['FCFPS_delta'].shift(2)
+
+DF['EBITDA_delta_shift1'] = DF['EBITDA_delta'].shift(1)
+DF['EBITDA_delta_shift2'] = DF['EBITDA_delta'].shift(2)
+
+DF['GROSSMARG_delta_shift1'] = DF['GROSSMARG_delta'].shift(1)
+DF['GROSSMARG_delta_shift2'] = DF['GROSSMARG_delta'].shift(2)
+
+DF['SHARESOUT_delta_shift1'] = DF['SHARESOUT_delta'].shift(1)
+DF['SHARESOUT_delta_shift2'] = DF['SHARESOUT_delta'].shift(2)
+
+##EPS based on rolling 5-year average
+DF['Growth Rate'] = DF['epsusd'].pct_change().rolling(window=5).mean() * 10
+DF.tail(20)
+
+##Funtions to create new columns that identify consecutive period changes
+def rule1(row):
+    return row['ROIC_delta'] > row['ROIC_delta_shift1'] and row['ROIC_delta_shift1'] > row['ROIC_delta_shift2']
+DF['ROIC_incr'] = DF.apply(rule1, axis=1)
+
+def rule2(row):
+    return row['FCFPS_delta'] > row['FCFPS_delta_shift1'] and row['FCFPS_delta_shift1'] > row['FCFPS_delta_shift2']
+DF['FCFPS_incr'] = DF.apply(rule2, axis=1)
+
+def rule3(row):
+    return row['EBITDA_delta'] > row['EBITDA_delta_shift1'] and row['EBITDA_delta_shift1'] > row['EBITDA_delta_shift2']
+DF['EBITDA_incr'] = DF.apply(rule3, axis=1)
+
+def rule4(row):
+    return row['GROSSMARG_delta'] > row['GROSSMARG_delta_shift1'] and row['GROSSMARG_delta_shift1'] > row['GROSSMARG_delta_shift2']
+DF['GROSSMARG_incr'] = DF.apply(rule4, axis=1)
+
+def rule5(row):
+    return row['SHARESOUT_delta'] <= row['SHARESOUT_delta_shift1'] and row['SHARESOUT_delta_shift1'] <= row['SHARESOUT_delta_shift2']
+DF['SHARESOUT_decr'] = DF.apply(rule5, axis=1)
+
+## Intrinsic value  calc based on past 5 TTM EPS growth
+def Calc_IV(row):
+    row = row['epsusd']*(Multiple + (2 * row['Growth Rate']) * Treasury_Rate)/Corporate_Yield
+    return row
+DF['Intrinsic Value'] = DF.apply(Calc_IV, axis=1)
+    
+##--------------------------------------------------------------------------------------------------------------
+##Section below is to extract custom results
+
+##CRITERIA 1
+##Filter out stocks meeting ROIC criteria
+Top_Picks_ROIC = DF[(DF['calendardate'] == most_recent_quarter) & (DF['ROIC_incr'] == True)].loc[:,['ticker','Intrinsic Value']]
+Top_Picks_ROIC.head(10)
+Top_Picks_ROIC_List = list(Top_Picks_ROIC.ticker)
+print(Top_Picks_ROIC_List)
+
+##CRITERIA 2
+##Top picks for equities with increasing FCFPS
+Top_Picks_FCFPS = DF[(DF['calendardate'] == most_recent_quarter) & (DF['FCFPS_incr'] == True)].loc[:,['ticker','Intrinsic Value']]
+Top_Picks_FCFPS.head(10)
+Top_Picks_FCFPS_List = list(Top_Picks_FCFPS.ticker)
+print(Top_Picks_FCFPS_List)
+
+##CRITERIA 3
+##Filter out stocks meeting increasing EBITDA
+Top_Picks_EBITDA = DF[(DF['calendardate'] == most_recent_quarter) & (DF['EBITDA_incr'] == True)].loc[:,['ticker','Intrinsic Value']]
+Top_Picks_EBITDA.head(10)
+Top_Picks_EBITDA_List = list(Top_Picks_EBITDA.ticker)
+print(Top_Picks_EBITDA_List)
+
+##CRITERIA 4
+##Top FCFPS picks with also increasing margins
+Top_Picks_FCFPS_GROSSMARG = DF[(DF['calendardate'] == most_recent_quarter) & (DF['FCFPS_incr'] == True) & 
+    (DF['GROSSMARG_incr'] == True)].loc[:,['ticker','Intrinsic Value']]
+Top_Picks_FCFPS_GROSSMARG.head(10)
+Top_Picks_FCFPS_GROSSMARG_List = list(Top_Picks_FCFPS_GROSSMARG)
+print(Top_Picks_FCFPS_GROSSMARG_List)
+
+##CRITERIA 5
+##Top FCFPS picks with increasing margins and declining outstanding shares
+Top_Picks_FCFPS_SHARESOUT = DF[(DF['calendardate'] == most_recent_quarter) & (DF['FCFPS_incr'] == True) & 
+    (DF['SHARESOUT_decr'] == True)].loc[:,['ticker','Intrinsic Value']]
+Top_Picks_FCFPS_SHARESOUT.head(10)
+Top_Picks_FCFPS_SHARESOUT_List = list(Top_Picks_FCFPS_SHARESOUT)
+print(Top_Picks_FCFPS_SHARESOUT_List)
+ 
+##------------------------------------------------------------------------------------------
+##-----------------------Results Summary-----------------------------------------------------
+
+##Pull metadata for tickers here
+ticker_metadata = quandl.get_table('SHARADAR/TICKERS', ticker = x_var, qopts={"columns": ['ticker','sector','industry','sicindustry',
+    'scalerevenue','name']}, paginate=True)
+
+#Compile lists of all results into one list with unique tickers
+Final_Ticker_List = Top_Picks_ROIC_List + list(set(Top_Picks_FCFPS_List) - set(Top_Picks_EBITDA_List) - set(Top_Picks_FCFPS_GROSSMARG_List) - 
+    set(Top_Picks_FCFPS_SHARESOUT_List) - set(Top_Picks_ROIC_List))
+    
+print(Final_Ticker_List)
+
+##Get historical price data for top picks
+Top_Picks_PriceDF = quandl.get_table('SHARADAR/SEP', qopts={"columns": ['ticker', 'date','close']}, date={'gte': time_period},
+   ticker=Final_Ticker_List, paginate=True).sort_values(by = ['ticker'])
+    
+#Change date type to match variable 
+#pd.to_datetime(Top_Picks_PriceDF['date'])
+#Top_Picks_PriceDF['date2'] = Top_Picks_PriceDF['date'].dt.date
+#Top_Picks_PriceDF[Top_Picks_PriceDF['date'] == '2018-01-01']['close']
+Top_Picks_PriceDF.head(10)
+Top_Picks_PriceDF.info()
+
+#Create new columns with future average price
+#3 months forward average
+
+Forward_PriceDF = pd.DataFrame(index=Final_Ticker_List, columns=[])
+one_months_forward = Top_Picks_PriceDF[(Top_Picks_PriceDF['date'] >= one_months_start) & (Top_Picks_PriceDF['date'] <= one_months_end)].groupby('ticker').mean()
+three_months_forward = Top_Picks_PriceDF[(Top_Picks_PriceDF['date'] >= three_months_start) & (Top_Picks_PriceDF['date'] <= three_months_end)].groupby('ticker').mean()
+six_months_forward = Top_Picks_PriceDF[(Top_Picks_PriceDF['date'] >= six_months_start) & (Top_Picks_PriceDF['date'] <= six_months_end)].groupby('ticker').mean()
+nine_months_forward = Top_Picks_PriceDF[(Top_Picks_PriceDF['date'] >= nine_months_start) & (Top_Picks_PriceDF['date'] <= nine_months_end)].groupby('ticker').mean()
+twelve_months_forward = Top_Picks_PriceDF[(Top_Picks_PriceDF['date'] >= twelve_months_start) & (Top_Picks_PriceDF['date'] <= twelve_months_end)].groupby('ticker').mean() 
+
+Forward_PriceDF['ticker'] = Final_Ticker_List
+Forward_PriceDF['1 mos Forward'] = one_months_forward
+Forward_PriceDF['3 mos Forward'] = three_months_forward
+Forward_PriceDF['6 mos Forward'] = six_months_forward
+Forward_PriceDF['9 mos Forward'] = nine_months_forward
+Forward_PriceDF['12 mos Forward'] = twelve_months_forward
+
+Top_Picks_PriceDF['15-day Avg'] = Top_Picks_PriceDF['close'].rolling(window=15).mean()
+Top_Picks_PriceDF['30-day Avg'] = Top_Picks_PriceDF['close'].rolling(window=30).mean()
+Top_Picks_PriceDF['45-day Avg'] = Top_Picks_PriceDF['close'].rolling(window=45).mean()
+Final_Table = Top_Picks_PriceDF[Top_Picks_PriceDF['date'] == pd.Timestamp(yesterday)]
+Final_Table.head(10)
+
+#Print out results for each criteria
+#CRITERIA 1
+Final_Table_MERGED = Final_Table.merge(ticker_metadata,how='inner',on='ticker').merge(Top_Picks_ROIC,how='inner',on='ticker').merge(Forward_PriceDF,how = 'inner',
+    on= 'ticker').drop_duplicates().reset_index()
+
+cols = ['index','ticker','date','Intrinsic Value', '1 mos Forward', '3 mos Forward', '6 mos Forward', '9 mos Forward', '12 mos Forward','15-day Avg', '30-day Avg','45-day Avg', 'sector', 'industry','sicindustry','scalerevenue','name']
+Final_Table_MERGED = Final_Table_MERGED[cols].sort_values(by=['scalerevenue'],ascending=False)
+print('Criteria 1 results:')
+print(Final_Table_MERGED)
+
+#CRITERIA 2
+Final_Table_MERGED2 = Final_Table.merge(ticker_metadata,how='inner',on='ticker').merge(Top_Picks_FCFPS,how='inner',on='ticker').merge(Forward_PriceDF, how='inner', 
+    on='ticker').drop_duplicates().reset_index()
+#Final_Table_MERGED2.head(10)
+cols = ['index','ticker','date','Intrinsic Value', '1 mos Forward', '3 mos Forward', '6 mos Forward', '9 mos Forward', '12 mos Forward', '15-day Avg', '30-day Avg','45-day Avg', 'sector', 'industry','sicindustry','scalerevenue','name']
+Final_Table_MERGED2 = Final_Table_MERGED2[cols].sort_values(by=['scalerevenue'],ascending=False)
+print('Criteria 2 results:')
+print(Final_Table_MERGED2)
+
+#CRITERIA 3
+Final_Table_MERGED3 = Final_Table.merge(ticker_metadata,how='inner',on='ticker').merge(Top_Picks_EBITDA,how='inner',on='ticker').merge(Forward_PriceDF,how='inner',
+    on='ticker').drop_duplicates().reset_index()
+#Final_Table_MERGED3.head(10)
+cols = ['index','ticker','date','Intrinsic Value', '1 mos Forward', '3 mos Forward', '6 mos Forward', '9 mos Forward', '12 mos Forward', '15-day Avg', '30-day Avg','45-day Avg', 'sector', 'industry','sicindustry','scalerevenue','name']
+Final_Table_MERGED3 = Final_Table_MERGED3[cols].sort_values(by=['scalerevenue'],ascending=False)
+print('Criteria 3 results:')
+print(Final_Table_MERGED3)
+
+#CRITERIA 4
+Final_Table_MERGED4 = Final_Table.merge(ticker_metadata,how='inner',on='ticker').merge(Top_Picks_FCFPS_GROSSMARG,how='inner',on='ticker').merge(Forward_PriceDF,how='inner',
+    on='ticker').drop_duplicates().reset_index()
+#Final_Table_MERGED4.head(10)
+cols = ['index','ticker','date','Intrinsic Value', '1 mos Forward', '3 mos Forward', '6 mos Forward', '9 mos Forward', '12 mos Forward', '15-day Avg', '30-day Avg','45-day Avg', 'sector', 'industry','sicindustry','scalerevenue','name']
+Final_Table_MERGED4 = Final_Table_MERGED4[cols].sort_values(by=['scalerevenue'],ascending=False)
+print('Criteria 4 results:')
+print(Final_Table_MERGED4)
+
+#CRITERIA 5
+Final_Table_MERGED5 = Final_Table.merge(ticker_metadata,how='inner',on='ticker').merge(Top_Picks_FCFPS_SHARESOUT,how='inner',on='ticker').merge(Forward_PriceDF,how='inner',
+    on='ticker').drop_duplicates().reset_index()
+#Final_Table_MERGED4.head(10)
+cols = ['index','ticker','date','Intrinsic Value', '1 mos Forward', '3 mos Forward', '6 mos Forward', '9 mos Forward', '12 mos Forward', '15-day Avg', '30-day Avg','45-day Avg', 'sector', 'industry','sicindustry','scalerevenue','name']
+Final_Table_MERGED5 = Final_Table_MERGED5[cols].sort_values(by=['scalerevenue'],ascending=False)
+print('Criteria 5 results:')
+print(Final_Table_MERGED5)
+
+
+#Create excel writer to write multiple DFs to one excel file
+writer = pd.ExcelWriter('AnalysisOutput.xlsx', engine = 'xlsxwriter')
+
+#Export final table to excel 
+Final_Table_MERGED.to_excel(writer, sheet_name='ROIC')
+Final_Table_MERGED2.to_excel(writer, sheet_name='FCFPS')
+Final_Table_MERGED3.to_excel(writer, sheet_name='EBITDA')
+Final_Table_MERGED4.to_excel(writer, sheet_name='FCFPS_GROSSMARG')
+Final_Table_MERGED5.to_excel(writer, sheet_name='FCFPS_SHARESOUT')
+writer.save()
+
+#--which equities have increasing ROIC 
+#--which equities have increasing ROIC AND increasing Margins 
+ 
+
+# As of 3/26/2019, the top results are: H, LAD*, ALSN*, TRCO, MIK*, TOL, TGNA**, GTN**,, LGIH*, HHIS, YETI, MOD***,DRFV , MCHP** 
+# lYV might be overpriced
+
+
+
+
+
+
+
+
