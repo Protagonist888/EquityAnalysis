@@ -1,4 +1,8 @@
 # Geometric Browian Motion algorithm for stock prices
+# Uses Garman-Klass estimator to measure volatlity
+## Hypothesize that better measuring and predicting volatility will give me higher confidence in 
+# future price movements (withint 1 to 2 weeks) when overall volatility is high
+# Try another version of this, but with Yang-Zhang estimator which would be better in markets with drift
 
 
 import numpy as np
@@ -26,7 +30,7 @@ def calculate_returns(prices):
     """Calculate log returns from price data."""
     return np.log(prices[1:] / prices[:-1])
 
-def garman_klass_volatility(df, window=30):
+def garman_klass_volatility(df, window=10, periods_per_year=26):
     """
     Calculate Garman-Klass volatility estimator.
     
@@ -39,7 +43,7 @@ def garman_klass_volatility(df, window=30):
     
     rs = 0.5 * log_hl**2 - (2*np.log(2)-1) * log_co**2
     
-    return np.sqrt(rs.rolling(window=window).mean() * 252)
+    return np.sqrt(rs.rolling(window=window).mean())
 
 def estimate_gbm_params(returns, volatility, dt=1/252):
     """
@@ -50,7 +54,7 @@ def estimate_gbm_params(returns, volatility, dt=1/252):
     :param dt: Time step (default is daily)
     :return: mu (drift), sigma (volatility)
     """
-    mu = np.mean(returns) / dt + 0.5 * volatility**2
+    mu = returns.mean() / dt + 0.5 * volatility.iloc[-1]**2
     sigma = volatility.iloc[-1]  # Use the most recent volatility estimate
     return mu, sigma
 
@@ -79,19 +83,23 @@ def main(directory, filename):
     # Read data from CSV
     df = read_csv_data(directory, filename)
     
-    # Calculate returns and Garman-Klass volatility
+    # Calculate returns 
     returns = calculate_returns(df['Close'])
-    volatility = garman_klass_volatility(df)
-    
+
+    # Calculate Garman-Klass volatility for different timeframes
+    volatility_annual = garman_klass_volatility(df, window=30, periods_per_year=252) # annual (original)
+    volatility_biweekly = garman_klass_volatility(df) #bi-weekly (new default)
+    volatility_weekly = garman_klass_volatility(df, window=5, periods_per_year=52)
+
     # Estimate parameters
-    dt = 1/252  # assuming daily data
-    mu, sigma = estimate_gbm_params(returns, volatility, dt)
+    dt = 1/26  # assuming daily data
+    mu, sigma = estimate_gbm_params(returns, volatility_biweekly, dt)
     
     print(f"Estimated parameters: μ (drift) = {mu:.4f}, σ (volatility) = {sigma:.4f}")
     
     # Simulate future paths
     S0 = df['Close'].iloc[-1]  # last observed price
-    T = 1  # simulate for 1 year
+    T = 26/52  # simulate for 26 weeks (half a year)
     num_paths = 1000
     simulated_paths = simulate_gbm(S0, mu, sigma, T, dt, num_paths)
     
@@ -109,24 +117,26 @@ def main(directory, filename):
     plt.ylabel('Price')
     plt.show()
 
-    # Plot historical volatility
+   # Plot historical volatilities
     plt.figure(figsize=(12, 6))
-    plt.plot(volatility, label='Garman-Klass Volatility')
-    plt.title('Historical Garman-Klass Volatility')
+    plt.plot(volatility_annual, label='Annual Volatility')
+    plt.plot(volatility_biweekly, label='Bi-weekly Volatility')
+    plt.plot(volatility_weekly, label='Weekly Volatility')
+    plt.title('Historical Garman-Klass Volatility Estimates')
     plt.xlabel('Time Steps')
     plt.ylabel('Annualized Volatility')
     plt.legend()
     plt.show()
 
-    # Calculate and print some statistics
+    # Calculate and print some statistics (adjusted for bi-weekly forecasting)
     final_prices = simulated_paths[-1, :]
-    print(f"Forecasted price statistics after {T} year:")
+    print(f"Forecasted price statistics after 26 weeks:")
     print(f"Mean: {np.mean(final_prices):.2f}")
     print(f"Median: {np.median(final_prices):.2f}")
     print(f"5th percentile: {np.percentile(final_prices, 5):.2f}")
     print(f"95th percentile: {np.percentile(final_prices, 95):.2f}")
 
 if __name__ == "__main__":
-    directory = "C:/Users/mchung/Personal/EquityAnalysis"  # Replace with your directory path
+    directory = "C:/Users/markc/PythonAI/EquityAnalysis"  # Replace with your directory path
     filename = "ASTS.csv"  # Replace with your CSV filename
     main(directory, filename)
