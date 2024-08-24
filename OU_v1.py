@@ -1,5 +1,6 @@
 #Ornstein-Uhlenbeck Process
-# Hypothesis: used to estimate path of stock prices
+# Hypothesis: used to estimate path of stock prices. Typically used when values
+# revert to a long-time average
 
 
 
