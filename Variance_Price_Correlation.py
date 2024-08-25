@@ -1,4 +1,4 @@
-# Measure correlation between volatility and price over two week windows
+# Measure correlation between volatility and price over two week windows 
 
 
 import numpy as np
