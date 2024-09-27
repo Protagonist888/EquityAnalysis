@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # 1. Load the stock price data from a CSV file
-file_path = 'C:/Users/markc/PythonAI/EquityAnalysis/ASTS.csv'
+file_path = 'C:/Users/mchung/Personal/EquityAnalysis/ASTS.csv'
 stock_data = pd.read_csv(file_path)
 stock_data['Date'] = pd.to_datetime(stock_data['Date'])
 stock_data = stock_data.sort_values('Date')
