@@ -1,10 +1,11 @@
 # This script walks through steps to calculate vol using GARCH and VIX prices as input
 '''
 A few notes and potential next steps:
--The DCC-GARCH model in this script is a simplified version. For a more meaningful comparison, you might want to use two related financial series instead of a dummy variable.
 -The forecast accuracy measure uses squared returns as a proxy for realized volatility. There are more sophisticated measures of realized volatility that could be implemented for a more accurate comparison.
 -You might want to consider implementing a rolling window forecast to get a more robust measure of forecast accuracy over time.
 -The script assumes that your VIX.csv file is in the same directory. Make sure this is the case when running the script.
+-- Add sentiment score, book depth (e.g. bi/ask spreads,volume, options implied volatility, regime-switching models) as another variable
+--  
 '''
 
 import pandas as pd
@@ -13,7 +14,6 @@ from arch import arch_model
 import matplotlib.pyplot as plt
 from statsmodels.tsa.stattools import adfuller
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-from arch.univariate import GARCH
 from scipy.stats import norm
 from sklearn.metrics import mean_squared_error
 import seaborn as sns
@@ -21,7 +21,10 @@ import seaborn as sns
 # Step 1: Data Preparation
 def load_and_prepare_data(file_path):
     df = pd.read_csv(file_path, parse_dates=['Date'], index_col='Date')
-    df['returns'] = df['Adj Close'].pct_change().dropna()
+    df['returns'] = df['Adj Close'].pct_change()
+    
+    # Remove NaN and inf values
+    df = df.replace([np.inf, -np.inf], np.nan).dropna()
     
     # Visualization of raw data and returns
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
@@ -33,6 +36,7 @@ def load_and_prepare_data(file_path):
     plt.show()
     
     return df
+
 
 # Step 2: Check for Stationarity
 def check_stationarity(series):
@@ -85,15 +89,7 @@ def forecast_volatility(model_results, forecast_horizon=14):
     forecast = model_results.forecast(horizon=forecast_horizon)
     return forecast.variance.iloc[-1]
 
-# Step 6: Fit DCC-GARCH model
-def fit_dcc_garch(returns):
-    # For simplicity, we'll use a bivariate DCC-GARCH with VIX returns and a dummy variable
-    dummy = pd.Series(np.random.randn(len(returns)), index=returns.index)
-    data = pd.concat([returns, dummy], axis=1)
-    
-    model = arch_model(data, vol='GARCH', p=1, q=1, mean='constant', dist='normal', correlation='DCC')
-    results = model.fit(disp='off')
-    return results
+
 
 # Step 7: Forecast Accuracy
 def forecast_accuracy(true_values, forecasts):
@@ -101,52 +97,44 @@ def forecast_accuracy(true_values, forecasts):
     rmse = np.sqrt(mse)
     return {'MSE': mse, 'RMSE': rmse}
 
-# Main execution
 if __name__ == "__main__":
     # Load and prepare data
     df = load_and_prepare_data('VIX.csv')
     
-    # Check stationarity
-    print("\nChecking stationarity of returns:")
-    check_stationarity(df['returns'])
-    
-    # Fit GARCH(1,1) model
-    garch_results = fit_garch_model(df['returns'])
-    print("\nGARCH(1,1) Model Summary:")
-    print(garch_results.summary())
-    
-    # Perform diagnostic checks
-    print("\nPerforming diagnostic checks...")
-    diagnostic_checks(garch_results, df['returns'])
-    
-    # Forecast volatility
-    forecast_horizon = 14  # Forecasting for the next 14 days
-    garch_forecast = forecast_volatility(garch_results, forecast_horizon)
-    
-    # Fit DCC-GARCH model
-    dcc_results = fit_dcc_garch(df['returns'])
-    print("\nDCC-GARCH Model Summary:")
-    print(dcc_results.summary())
-    
-    # Forecast with DCC-GARCH
-    dcc_forecast = dcc_results.forecast(horizon=forecast_horizon).variance[df['returns'].name].iloc[-1]
-    
-    # Plot forecasts
-    plt.figure(figsize=(12, 6))
-    plt.plot(garch_forecast, label='GARCH(1,1)')
-    plt.plot(dcc_forecast, label='DCC-GARCH')
-    plt.title(f'Volatility Forecast for the Next {forecast_horizon} Days')
-    plt.xlabel('Days')
-    plt.ylabel('Forecasted Variance')
-    plt.legend()
-    plt.show()
-    
-    # Calculate forecast accuracy
-    # We'll use the last 14 days of our data as "true" values
-    true_volatility = df['returns'][-forecast_horizon:]**2  # Squared returns as proxy for realized volatility
-    garch_accuracy = forecast_accuracy(true_volatility, garch_forecast)
-    dcc_accuracy = forecast_accuracy(true_volatility, dcc_forecast)
-    
-    print("\nForecast Accuracy:")
-    print("GARCH(1,1):", garch_accuracy)
-    print("DCC-GARCH:", dcc_accuracy)
+    # Check if we have enough data after cleaning
+    if len(df) < 30:  # Arbitrary threshold, adjust as needed
+        print("Not enough data points after cleaning. Please check your input data.")
+    else:
+        # Check stationarity
+        print("\nChecking stationarity of returns:")
+        check_stationarity(df['returns'])
+        
+        # Fit GARCH(1,1) model
+        garch_results = fit_garch_model(df['returns'])
+        print("\nGARCH(1,1) Model Summary:")
+        print(garch_results.summary())
+        
+        # Perform diagnostic checks
+        print("\nPerforming diagnostic checks...")
+        diagnostic_checks(garch_results, df['returns'])
+        
+        # Forecast volatility
+        forecast_horizon = 14  # Forecasting for the next 14 days
+        garch_forecast = forecast_volatility(garch_results, forecast_horizon)
+        
+        # Plot forecast
+        plt.figure(figsize=(12, 6))
+        plt.plot(garch_forecast, label='GARCH(1,1)')
+        plt.title(f'Volatility Forecast for the Next {forecast_horizon} Days')
+        plt.xlabel('Days')
+        plt.ylabel('Forecasted Variance')
+        plt.legend()
+        plt.show()
+        
+        # Calculate forecast accuracy
+        # We'll use the last 14 days of our data as "true" values
+        true_volatility = df['returns'][-forecast_horizon:]**2  # Squared returns as proxy for realized volatility
+        garch_accuracy = forecast_accuracy(true_volatility, garch_forecast)
+        
+        print("\nForecast Accuracy:")
+        print("GARCH(1,1):", garch_accuracy)
