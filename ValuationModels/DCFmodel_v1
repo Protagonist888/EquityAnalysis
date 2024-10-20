@@ -1,0 +1,144 @@
+import numpy as np
+import pandas as pd
+from scipy.stats import norm
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+class DCFModel:
+    def __init__(self, company_name, years_to_project=5):
+        self.company_name = company_name
+        self.years_to_project = years_to_project
+        self.historical_data = None
+        self.projected_financials = None
+        self.wacc = None
+        self.terminal_growth_rate = None
+        self.future_stock_prices = {}
+        self.monte_carlo_results = None
+
+    # ... [previous methods remain largely unchanged] ...
+
+    def monte_carlo_simulation(self, num_simulations=10000):
+        """
+        Perform Monte Carlo simulation to estimate range of possible stock prices
+        """
+        print(f"\nPerforming Monte Carlo simulation with {num_simulations} iterations...")
+        
+        # Define ranges for key inputs
+        wacc_range = (self.wacc * 0.8, self.wacc * 1.2)
+        growth_range = (self.terminal_growth_rate * 0.5, min(self.terminal_growth_rate * 1.5, self.wacc * 0.9))
+        fcf_growth_range = (0.02, 0.1)  # Assuming 2% to 10% FCF growth range
+
+        simulated_prices = []
+
+        for _ in range(num_simulations):
+            # Randomly sample from input distributions
+            wacc = np.random.uniform(*wacc_range)
+            terminal_growth = np.random.uniform(*growth_range)
+            fcf_growth = np.random.uniform(*fcf_growth_range)
+
+            # Project FCF with random growth
+            fcf = self.projected_financials['Free Cash Flow'].iloc[-1]
+            projected_fcf = [fcf * (1 + fcf_growth) ** i for i in range(1, self.years_to_project + 1)]
+
+            # Calculate terminal value
+            terminal_value = projected_fcf[-1] * (1 + terminal_growth) / (wacc - terminal_growth)
+
+            # Discount cash flows
+            pv_fcf = np.sum([cf / (1 + wacc) ** i for i, cf in enumerate(projected_fcf, start=1)])
+            pv_terminal_value = terminal_value / (1 + wacc) ** self.years_to_project
+
+            # Calculate enterprise and equity value
+            enterprise_value = pv_fcf + pv_terminal_value
+            last_year = self.balance_sheet.index[-1]
+            debt = self.balance_sheet.loc[last_year, 'Total Debt']
+            cash = self.balance_sheet.loc[last_year, 'Cash and Cash Equivalents']
+            equity_value = enterprise_value - debt + cash
+
+            # Calculate stock price
+            shares_outstanding = self.balance_sheet.loc[last_year, 'Shares Outstanding']
+            stock_price = equity_value / shares_outstanding
+
+            simulated_prices.append(stock_price)
+
+        self.monte_carlo_results = simulated_prices
+
+    def visualize_results(self):
+        """
+        Create visualizations for DCF analysis results
+        """
+        # Set up the matplotlib figure
+        fig = plt.figure(figsize=(15, 20))
+        
+        # 1. Projected Financials
+        ax1 = fig.add_subplot(421)
+        self.projected_financials[['Revenue', 'EBITDA', 'Free Cash Flow']].plot(ax=ax1)
+        ax1.set_title('Projected Financials')
+        ax1.set_ylabel('Amount ($)')
+        
+        # 2. DCF Valuation Breakdown
+        ax2 = fig.add_subplot(422)
+        pv_fcf_total = self.pv_fcf.sum()
+        values = [pv_fcf_total, self.pv_terminal_value]
+        labels = ['PV of FCF', 'PV of Terminal Value']
+        ax2.pie(values, labels=labels, autopct='%1.1f%%', startangle=90)
+        ax2.set_title('DCF Valuation Breakdown')
+        
+        # 3. Sensitivity Analysis Heatmap
+        ax3 = fig.add_subplot(423)
+        sns.heatmap(self.sensitivity_matrix, annot=True, fmt=',.0f', cmap='YlGnBu', ax=ax3)
+        ax3.set_title('Sensitivity Analysis: Enterprise Value ($M)')
+        
+        # 4. Monte Carlo Simulation Results
+        ax4 = fig.add_subplot(424)
+        sns.histplot(self.monte_carlo_results, kde=True, ax=ax4)
+        ax4.axvline(np.mean(self.monte_carlo_results), color='r', linestyle='dashed', linewidth=2)
+        ax4.set_title('Monte Carlo Simulation: Stock Price Distribution')
+        ax4.set_xlabel('Stock Price ($)')
+        
+        # 5. Projected Stock Prices
+        ax5 = fig.add_subplot(425)
+        years = list(self.future_stock_prices.keys())
+        prices = list(self.future_stock_prices.values())
+        ax5.plot(years, prices, marker='o')
+        ax5.set_title('Projected Stock Prices')
+        ax5.set_xlabel('Years from Now')
+        ax5.set_ylabel('Projected Stock Price ($)')
+        ax5.set_xticks(years)
+        
+        plt.tight_layout()
+        plt.savefig('dcf_analysis_results.png')
+        print("Visualizations saved as 'dcf_analysis_results.png'")
+
+    def display_results(self):
+        """
+        Display a summary of the DCF analysis results, including Monte Carlo simulation
+        """
+        # ... [previous content of display_results] ...
+
+        print("\nMonte Carlo Simulation Results:")
+        mc_mean = np.mean(self.monte_carlo_results)
+        mc_median = np.median(self.monte_carlo_results)
+        mc_std = np.std(self.monte_carlo_results)
+        print(f"Mean simulated stock price: ${mc_mean:.2f}")
+        print(f"Median simulated stock price: ${mc_median:.2f}")
+        print(f"Standard deviation: ${mc_std:.2f}")
+        print(f"90% confidence interval: ${np.percentile(self.monte_carlo_results, 5):.2f} to ${np.percentile(self.monte_carlo_results, 95):.2f}")
+
+        self.visualize_results()
+
+    def run_dcf_analysis(self):
+        self.load_historical_data('financial_data.xlsx')
+        self.calculate_historical_metrics()
+        self.get_user_assumptions()
+        self.project_financials()
+        self.calculate_wacc()
+        self.calculate_terminal_value()
+        self.discount_cash_flows()
+        self.project_future_stock_prices()
+        self.perform_sensitivity_analysis()
+        self.monte_carlo_simulation()
+        self.display_results()
+
+# Usage
+dcf_model = DCFModel("Example Company")
+dcf_model.run_dcf_analysis()
