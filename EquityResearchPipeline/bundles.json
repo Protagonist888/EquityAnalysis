@@ -1,0 +1,106 @@
+{
+  "_readme": [
+    "Maps blog template sections to corpus files. One bundle = one chat.",
+    "Run order: A, B, C, D2 (any order) -> save each reviewed reply as drafts/<ID>.md -> D -> E -> F -> G.",
+    "A stage with a 'task' instead of 'sections' produces a working document (e.g. the events log) rather than template sections.",
+    "Source selectors:",
+    "  form: 10-K | 10-Q | 8-K | DEF 14A | file",
+    "  which: latest | prior | all | latest_n (with n) | since_latest_10k (10-Qs for periods after the latest 10-K)",
+    "  items (10-K/10-Q): split-file labels. 10-Q: 1=financial statements, 2=MD&A, 3=market risk, 4=controls, 1-2=legal (Part II), 1A=risk factors, 2-2=equity sales/buybacks (Part II)",
+    "  part (10-K/10-Q): cover = text before the first Item heading (share count lives here); full = whole filing",
+    "  8-K: items_any keeps 8-Ks listing any of these items; items_other_than keeps 8-Ks listing at least one item NOT in the list; main / exhibits choose the 8-K body and/or its exhibit files; exhibits_skip_if_items drops exhibits from 8-Ks that list those items (earnings releases already sit in bundle B)",
+    "  file: name = exact filename in the corpus folder (e.g. form4_summary.md)",
+    "  when: no_10q_since_latest_10k | has_10q_since_latest_10k - include this source only in that situation"
+  ],
+  "max_tokens": 150000,
+  "bundles": [
+    {
+      "id": "A",
+      "title": "Business, competition, moat",
+      "sections": ["2", "7", "8"],
+      "sources": [
+        {"form": "10-K", "which": "latest", "items": ["1", "1A", "2", "7"]},
+        {"form": "10-Q", "which": "since_latest_10k", "items": ["1A"]}
+      ],
+      "notes": "MD&A (Item 7) is included because some filers, APLD among them, point Item 1 to the MD&A 'Business Overview' for the business description. Section 7's competitor list comes from the company's own Item 1. Name it as the company's framing, not an independent view."
+    },
+    {
+      "id": "B",
+      "title": "The numbers and the driver",
+      "sections": ["3", "6"],
+      "sources": [
+        {"form": "10-K", "which": "latest", "items": ["7", "7A"]},
+        {"form": "10-Q", "which": "since_latest_10k", "items": ["1", "2"]},
+        {"form": "10-K", "which": "latest", "items": ["8"], "when": "no_10q_since_latest_10k"},
+        {"form": "8-K", "which": "latest_n", "n": 2, "items_any": ["2.02"], "main": false, "exhibits": true}
+      ],
+      "notes": "Section 3 asks for 'the ONE number flagged as thesis-critical last time'. That comes from your previous post, not the filings. Paste it into the chat, or the section will mark it as an open item. When the 10-K is the most recent period, its Item 8 is added so the balance sheet, debt and interest figures are present."
+    },
+    {
+      "id": "C",
+      "title": "Forensic read: financial statements and notes",
+      "sections": ["9.2", "9.4", "9.5", "9.6"],
+      "sources": [
+        {"form": "10-K", "which": "latest", "part": "cover"},
+        {"form": "10-K", "which": "latest", "items": ["3", "8", "9", "9A"]},
+        {"form": "10-Q", "which": "since_latest_10k", "items": ["1", "4", "1-2"]},
+        {"form": "8-K", "which": "all", "items_any": ["4.01", "4.02"], "main": true, "exhibits": true}
+      ],
+      "notes": "If Item 8 is only a pointer to later pages, the notes live under Item 15; add \"15\" to the 10-K items above."
+    },
+    {
+      "id": "D2",
+      "title": "Material events log",
+      "sections": [],
+      "task": "Build a dated log of every material 8-K below: one row per filing with date | 8-K items | what happened (one plain sentence) | share or debt impact (instrument, amount, conversion or interest terms, as stated) | counterparty | citation. Then list separately: (a) every financing that adds debt or can add shares, (b) every related-party or insider-linked agreement, (c) every dated future obligation or milestone. Facts as stated only; no assessment.",
+      "sources": [
+        {"form": "8-K", "which": "all", "main": true, "exhibits": false, "items_other_than": ["2.02", "4.01", "4.02", "7.01", "9.01"]}
+      ],
+      "notes": "8-K bodies only; exhibits are left out to fit the budget (Item 1.01 bodies carry the agreement terms). If a row needs an exhibit, note it as an open item and add that file by hand."
+    },
+    {
+      "id": "D",
+      "title": "Forensic read: share structure, insiders, related parties",
+      "sections": ["9.1", "9.3"],
+      "sources": [
+        {"form": "10-K", "which": "latest", "part": "cover"},
+        {"form": "10-K", "which": "latest", "items": ["5"]},
+        {"form": "10-Q", "which": "since_latest_10k", "items": ["2-2"]},
+        {"form": "DEF 14A", "which": "latest", "part": "full"},
+        {"form": "file", "name": "form4_summary.md"},
+        {"form": "file", "name": "form4_signal_only.csv", "optional": true},
+        {"form": "file", "name": "form144_notices.csv", "optional": true}
+      ],
+      "notes": "Financing and dilution events come from the reviewed events log (drafts/D2.md). form4_signal_only.csv lists each open-market trade so the summary can be checked by name and date.",
+      "drafts": ["D2"]
+    },
+    {
+      "id": "E",
+      "title": "Valuation",
+      "sections": ["10"],
+      "drafts": ["B", "C", "D"],
+      "inputs": ["market_data.md"],
+      "sources": [
+        {"form": "8-K", "which": "latest_n", "n": 2, "items_any": ["2.02"], "main": false, "exhibits": true}
+      ],
+      "notes": "Works from the reviewed B/C/D drafts (reported figures, earnings adjustments, share count) plus your hand-entered market_data.md. Filings alone can't supply price, ranges, or consensus."
+    },
+    {
+      "id": "F",
+      "title": "Bull/bear, patterns, precedents",
+      "sections": ["4", "5", "9.7", "11"],
+      "drafts": ["A", "B", "C", "D2", "D", "E"],
+      "sources": [],
+      "notes": "Section 11.2 precedents are not in the filings. Enable web search for this chat; any precedent without a live citation must be marked UNVERIFIED."
+    },
+    {
+      "id": "G",
+      "title": "Assembly: header, setup, close, full post",
+      "sections": ["header", "1", "12", "13"],
+      "drafts": ["A", "B", "C", "D2", "D", "E", "F"],
+      "sources": [],
+      "assemble": true,
+      "notes": "Stitches the reviewed drafts into one post in template order. Writes only the new sections; edits the drafts only for flow and consistency."
+    }
+  ]
+}
